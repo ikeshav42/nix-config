@@ -1,0 +1,232 @@
+{ config, pkgs, ... }:
+
+{
+  imports = [ ./hardware-configuration.nix ];
+
+  # Bootloader
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.efi.canTouchEfiVariables = true;
+  
+  # Kernel 6.12 + Intel iGPU params for 120Hz
+  boot.kernelPackages = pkgs.linuxPackages_6_12;
+  boot.kernelParams = [ 
+    "i915.enable_guc=3" 
+    "i915.enable_psr=1"
+  ];
+
+  # SSD optimizations
+  boot.kernel.sysctl = {
+    "vm.swappiness" = 10;
+    "vm.vfs_cache_pressure" = 50;
+  };
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
+
+  # Optimize store automatically
+  nix.optimise = {
+    automatic = true;
+    dates = [ "weekly" ];
+  };
+  networking.hostName = "anakinskywalker";
+  networking.networkmanager.enable = true;
+
+  time.timeZone = "America/Chicago";
+  i18n.defaultLocale = "en_US.UTF-8";
+
+  # Enable OpenGL
+  hardware.graphics = {
+    enable = true;
+    extraPackages = with pkgs; [
+      intel-media-driver
+      intel-vaapi-driver
+      libva-vdpau-driver
+      libvdpau-va-gl
+    ];
+  };
+
+  # NVIDIA (PRIME Offload)
+  services.xserver.videoDrivers = [ "modesetting" "nvidia" ];
+
+  hardware.nvidia = {
+    modesetting.enable = true;
+    powerManagement.enable = true;
+    powerManagement.finegrained = true;
+    open = true;
+    nvidiaSettings = true;
+    package = config.boot.kernelPackages.nvidiaPackages.stable;
+
+    prime = {
+      offload = {
+        enable = true;
+        enableOffloadCmd = true;
+      };
+      intelBusId = "PCI:0:2:0";
+      nvidiaBusId = "PCI:1:0:0";
+    };
+  };
+
+  # Display server
+  services.xserver.enable = true;
+  services.displayManager.gdm.enable = true;
+  services.displayManager.gdm.wayland = true;
+  services.desktopManager.gnome.enable = true;
+
+  # Audio + codecs
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+    jack.enable = true;
+  };
+
+  # Disable pulseaudio
+  services.pulseaudio.enable = false;
+
+  # TLP battery optimization (disable GNOME power profiles)
+  services.power-profiles-daemon.enable = false;
+  services.tlp = {
+    enable = true;
+    settings = {
+      # CPU settings
+      CPU_SCALING_GOVERNOR_ON_AC = "performance";
+      CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
+      CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
+      CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
+      CPU_MIN_PERF_ON_AC = 0;
+      CPU_MAX_PERF_ON_AC = 100;
+      CPU_MIN_PERF_ON_BAT = 0;
+      CPU_MAX_PERF_ON_BAT = 30;
+      CPU_BOOST_ON_AC = 1;
+      CPU_BOOST_ON_BAT = 0;
+      CPU_HWP_DYN_BOOST_ON_AC = 1;
+      CPU_HWP_DYN_BOOST_ON_BAT = 0;
+
+      # Battery care
+      #START_CHARGE_THRESH_BAT0 = 75;
+      #STOP_CHARGE_THRESH_BAT0 = 80;
+
+      # Runtime power management
+      RUNTIME_PM_ON_AC = "on";
+      RUNTIME_PM_ON_BAT = "auto";
+
+      # PCI Express Active State Power Management
+      PCIE_ASPM_ON_AC = "default";
+      PCIE_ASPM_ON_BAT = "powersupersave";
+
+      # WiFi power saving
+      WIFI_PWR_ON_AC = "off";
+      WIFI_PWR_ON_BAT = "on";
+
+      # Disable wake on LAN
+      WOL_DISABLE = "Y";
+
+      # USB autosuspend
+      USB_AUTOSUSPEND = 1;
+      USB_EXCLUDE_AUDIO = 1;
+      USB_EXCLUDE_BTUSB = 0;
+      USB_EXCLUDE_PHONE = 0;
+      USB_EXCLUDE_PRINTER = 1;
+      USB_EXCLUDE_WWAN = 0;
+    };
+  };
+
+  # zram (compressed swap in RAM)
+  zramSwap = {
+    enable = true;
+    memoryPercent = 50;
+  };
+
+  # SSD TRIM
+  services.fstrim.enable = true;
+
+  # Preload equivalent (ananicy for process priority optimization)
+  services.ananicy = {
+    enable = true;
+    package = pkgs.ananicy-cpp;
+  };
+
+  # Printing
+  services.printing.enable = true;
+
+  # Clamshell mode support
+  services.logind.settings = {
+    Login = {
+      HandleLidSwitch = "suspend";
+      HandleLidSwitchExternalPower = "ignore";
+      HandleLidSwitchDocked = "ignore";
+    };
+  };
+  # GNOME power settings - longer timeouts when plugged in
+  services.displayManager.gdm.autoSuspend = false;
+  
+  # Disable auto-suspend on AC power via dconf
+  programs.dconf.enable = true;
+  programs.dconf.profiles.user.databases = [{
+    settings = {
+      "org/gnome/settings-daemon/plugins/power" = {
+        sleep-inactive-ac-timeout = pkgs.lib.gvariant.mkInt32 0;  # Never sleep on AC
+        sleep-inactive-battery-timeout = pkgs.lib.gvariant.mkInt32 900;  # 15 min on battery
+        idle-dim = false;  # Don't dim screen on AC
+      };
+      "org/gnome/desktop/session" = {
+        idle-delay = pkgs.lib.gvariant.mkUint32 0;  # No idle timeout
+      };
+    };
+  }];
+  # User
+  users.users.ikeshav42 = {
+    isNormalUser = true;
+    description = "Keshav Sundararaman";
+    extraGroups = [ "networkmanager" "wheel" "video" "audio" ];
+    shell = pkgs.fish;
+  };
+
+  # Fish shell
+  programs.fish.enable = true;
+
+  # Allow unfree
+  nixpkgs.config.allowUnfree = true;
+  services.flatpak.enable = true;
+  # Packages
+  environment.systemPackages = with pkgs; [
+    # System tools
+    vim neovim nano wget curl git htop btop fastfetch
+    mesa-demos pciutils usbutils lshw
+    powertop brightnessctl
+    fishPlugins.bass poetry
+    # GNOME
+    gnome-tweaks gnome-extension-manager
+
+    # Browsers
+    librewolf
+    firefox
+
+    # Development
+    vscodium
+    gcc python3
+
+    # Communication
+    discord
+    #telegram-desktop
+
+    # Network/VPN
+    qbittorrent
+    # surfshark - see note below
+    # pulse-secure - see note below
+
+    # Codecs
+    gst_all_1.gst-plugins-base
+    gst_all_1.gst-plugins-good
+    gst_all_1.gst-plugins-bad
+    gst_all_1.gst-plugins-ugly
+    gst_all_1.gst-libav
+    ffmpeg-full
+  ];
+
+  system.stateVersion = "25.11";
+}
