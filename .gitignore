@@ -2,3 +2,4 @@ result
 result-*
 *.secret
 secrets.nix
+configuration.nix.backup
