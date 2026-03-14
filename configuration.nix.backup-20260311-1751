@@ -4,7 +4,9 @@
   imports = [ ./hardware-configuration.nix ];
 
   services.openssh.enable = true;
-
+  networking.extraHosts = ''
+	127.0.0.1 localhost
+  '';
   # BOOT
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
@@ -12,13 +14,17 @@
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nix.settings.auto-optimise-store = true;
 
+  # Test newer kernel
   boot.kernelPackages = pkgs.linuxPackages_6_12;
+
+  virtualisation.libvirtd.enable = true;
+  programs.virt-manager.enable = true;
+  virtualisation.spiceUSBRedirection.enable = true;
 
   boot.kernelParams = [
     "i915.enable_guc=3"
-    "i915.enable_psr=2"
+    "i915.enable_psr=1"
     "intel_idle.max_cstate=10"
-    "pcie_aspm=force"
   ];
 
   boot.kernel.sysctl = {
@@ -39,14 +45,14 @@
   };
 
   programs.nix-ld = {
-    enable = true;
-    libraries = with pkgs; [
-      stdenv.cc.cc
-      openssl
-      zlib
-      curl
-    ];
-  };
+  enable = true;
+  libraries = with pkgs; [
+    stdenv.cc.cc
+    openssl
+    zlib
+    curl
+  ];
+};
 
   # NETWORK
   networking.hostName = "anakinskywalker";
@@ -61,13 +67,9 @@
   time.timeZone = "America/Chicago";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  # CPU MICROCODE
-  hardware.cpu.intel.updateMicrocode = true;
-
-  # FIRMWARE
+  # Firmware
   hardware.enableRedistributableFirmware = true;
   services.fwupd.enable = true;
-
   # GRAPHICS
   hardware.graphics = {
     enable = true;
@@ -86,7 +88,6 @@
     powerManagement.finegrained = true;
     open = true;
     nvidiaSettings = true;
-
     package = config.boot.kernelPackages.nvidiaPackages.stable;
 
     prime = {
@@ -123,10 +124,6 @@
   # POWER MANAGEMENT
   services.power-profiles-daemon.enable = false;
 
-  services.thermald.enable = true;
-
-  powerManagement.powertop.enable = true;
-
   services.tlp = {
     enable = true;
 
@@ -142,7 +139,7 @@
       CPU_MAX_PERF_ON_AC = 100;
 
       CPU_MIN_PERF_ON_BAT = 0;
-      CPU_MAX_PERF_ON_BAT = 50;
+      CPU_MAX_PERF_ON_BAT = 30;
 
       CPU_BOOST_ON_AC = 1;
       CPU_BOOST_ON_BAT = 0;
@@ -158,8 +155,6 @@
 
       WIFI_PWR_ON_AC = "off";
       WIFI_PWR_ON_BAT = "on";
-
-      SATA_LINKPWR_ON_BAT = "med_power_with_dipm";
 
       WOL_DISABLE = "Y";
 
@@ -234,24 +229,23 @@
   };
 
   programs.fish = {
-    enable = true;
+  enable = true;
 
-    shellAliases = {
-      build = "sudo nixos-rebuild build -L";
-      rebuild = "sudo nixos-rebuild switch";
-      rebuild-test = "sudo nixos-rebuild test";
+  shellAliases = {
+    build = "sudo nixos-rebuild build -L";
+    rebuild = "sudo nixos-rebuild switch";
+    rebuild-test = "sudo nixos-rebuild test";
 
-      update = "sudo nix-channel --update && sudo nixos-rebuild switch";
-      rollback = "sudo nixos-rebuild switch --rollback";
+    update = "sudo nix-channel --update && sudo nixos-rebuild switch";
+    rollback = "sudo nixos-rebuild switch --rollback";
 
-      cleanup = "sudo nix-collect-garbage -d";
-      generations = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system";
+    cleanup = "sudo nix-collect-garbage -d";
+    generations = "sudo nix-env --list-generations --profile /nix/var/nix/profiles/system";
 
-      nixconfig = "sudo nano /etc/nixos/configuration.nix";
-    };
+    nixconfig = "sudo nano /etc/nixos/configuration.nix";
   };
-
-  # PACKAGES
+};
+  #PACKAGES
   nixpkgs.config.allowUnfree = true;
 
   services.flatpak.enable = true;
@@ -261,7 +255,7 @@
     vim neovim nano
     wget curl git mesa-demos nodejs
 
-    htop btop gnumake distrobox
+    htop btop
     fastfetch claude-code
 
     pciutils usbutils lshw
@@ -271,11 +265,6 @@
     vscodium
     gcc
     python3
-
-    qemu virtualbox
-    virt-viewer
-    spice
-    spice-gtk
 
     fishPlugins.bass
 
@@ -302,30 +291,12 @@
     gst_all_1.gst-libav
     ffmpeg-full
   ];
-  
-  # VIRTUALIZATION (KVM / QEMU)
-virtualisation = {
-  libvirtd = {
-    enable = true;
 
-    qemu = {
-      package = pkgs.qemu_kvm;
-      runAsRoot = false;
-
-      swtpm.enable = true;  # TPM support for Windows 11
-    };
-  };
-
-  spiceUSBRedirection.enable = true;
-};
   # PODMAN
   virtualisation.podman = {
     enable = true;
     dockerCompat = true;
   };
-  virtualisation.virtualbox.host.enable = true;
-  virtualisation.virtualbox.host.enableExtensionPack = true;
-  users.extraGroups.vboxusers.members = [ "ikeshav42" ];
 
   system.stateVersion = "25.11";
 }
